@@ -1,0 +1,47 @@
+# ──────────────────────────────────────────────────────────────────────────
+# Foundry-Hub SERVER — dev dependencies only (Postgres + Redis).
+# The NestJS API runs on the host: npm run start:dev
+#
+#   cp .env.example .env      # add your DigitalOcean Spaces keys
+#   docker compose up -d
+#
+# Ports are isolated so they don't clash with other local stacks:
+#   Postgres 5434 · Redis 6380
+# ──────────────────────────────────────────────────────────────────────────
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: foundry_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DATABASE_USER:-foundry}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-foundry_secret}
+      POSTGRES_DB: ${DATABASE_NAME:-foundry_hub}
+    ports:
+      - "${DATABASE_PORT:-5434}:5432"
+    volumes:
+      - foundry_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER:-foundry} -d ${DATABASE_NAME:-foundry_hub}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: foundry_redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6380}:6379"
+    volumes:
+      - foundry_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  foundry_pgdata:
+  foundry_redisdata:
