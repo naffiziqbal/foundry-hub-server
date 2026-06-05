@@ -203,7 +203,7 @@ export class ProductsService {
     return this.findOne(id, user);
   }
 
-  /** Client (or owning designer) records an approve/reject decision. */
+  /** Assigned client records an approve/reject decision (client-only route). */
   async decide(
     id: string,
     dto: DecideApprovalDto,
@@ -215,11 +215,8 @@ export class ProductsService {
     if (dto.status === ApprovalStatus.PENDING) {
       throw new BadRequestException('Decision must be approved or rejected');
     }
-    // Clients may only decide on projects assigned to them; designers may too.
-    if (
-      user.role === UserRole.CLIENT &&
-      project.clientId !== user.id
-    ) {
+    // Only the client assigned to the project may decide.
+    if (project.clientId !== user.id) {
       throw new ForbiddenException('Not your project to approve');
     }
 

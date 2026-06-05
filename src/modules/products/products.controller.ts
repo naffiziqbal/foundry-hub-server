@@ -112,6 +112,7 @@ export class ProductsController {
   }
 
   @Post('products/:id/decision')
+  @Roles(UserRole.CLIENT)
   decide(
     @Param('id') id: string,
     @Body() dto: DecideApprovalDto,
