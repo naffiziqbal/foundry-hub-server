@@ -29,6 +29,33 @@ export interface PdfScheduleData {
   scheduleType: string;
   generatedAt: string;
   groups: PdfRoomGroup[];
+  /** Project budget ceiling — printed next to the grand total when set */
+  budget?: number | null;
+}
+
+export interface PdfPurchaseOrderLine {
+  name: string;
+  sku?: string;
+  roomName?: string;
+  unitPrice?: number | null;
+  quantity: number;
+  lineTotal: number;
+}
+
+export interface PdfPurchaseOrderData {
+  number: string;
+  status: string;
+  vendorName: string;
+  vendorEmail?: string;
+  projectName: string;
+  projectAddress?: string;
+  generatedAt: string;
+  currency: string;
+  subtotal: number;
+  discountPct?: number | null;
+  total: number;
+  notes?: string;
+  lines: PdfPurchaseOrderLine[];
 }
 
 const COLORS = {
@@ -76,7 +103,10 @@ export class PdfService {
         for (const row of group.rows) {
           this.renderProductRow(doc, row, imageCache);
         }
+        this.renderSubtotal(doc, group);
       }
+
+      this.renderGrandTotal(doc, data);
 
       if (data.groups.every((g) => g.rows.length === 0)) {
         doc
@@ -84,6 +114,122 @@ export class PdfService {
           .fontSize(11)
           .fillColor(COLORS.muted)
           .text('No products on this schedule yet.', { align: 'center' });
+      }
+
+      this.renderFooter(doc);
+      doc.end();
+    });
+  }
+
+  /** Renders a vendor-facing purchase order (no images — a clean line table). */
+  async renderPurchaseOrder(data: PdfPurchaseOrderData): Promise<Buffer> {
+    return new Promise<Buffer>((resolve, reject) => {
+      const doc = new PDFDocument({
+        size: 'A4',
+        margin: 48,
+        bufferPages: true,
+        info: { Title: `${data.number} — ${data.vendorName}`, Author: 'Foundry Hub' },
+      });
+      const chunks: Buffer[] = [];
+      doc.on('data', (c) => chunks.push(c as Buffer));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+
+      const left = doc.page.margins.left;
+      const width = doc.page.width - left - doc.page.margins.right;
+      const money = (n: number) =>
+        `${data.currency} ${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+      // Header
+      doc.fillColor(COLORS.accent).fontSize(9).text('FOUNDRY HUB', { characterSpacing: 2 });
+      doc.fillColor(COLORS.ink).fontSize(22).text(`Purchase Order ${data.number}`);
+      doc
+        .fontSize(10)
+        .fillColor(COLORS.muted)
+        .text(`${this.titleCase(data.status)} · Issued ${data.generatedAt}`);
+      doc.moveDown(0.8);
+
+      // Vendor / project blocks
+      const blockTop = doc.y;
+      doc.fontSize(8).fillColor(COLORS.muted).text('VENDOR', left, blockTop);
+      doc.fontSize(11).fillColor(COLORS.ink).text(data.vendorName, left, doc.y + 1);
+      if (data.vendorEmail)
+        doc.fontSize(9).fillColor(COLORS.muted).text(data.vendorEmail);
+      doc.fontSize(8).fillColor(COLORS.muted).text('PROJECT', left + width / 2, blockTop);
+      doc
+        .fontSize(11)
+        .fillColor(COLORS.ink)
+        .text(data.projectName, left + width / 2, blockTop + 11);
+      if (data.projectAddress)
+        doc
+          .fontSize(9)
+          .fillColor(COLORS.muted)
+          .text(data.projectAddress, left + width / 2, doc.y + 1, { width: width / 2 });
+      doc.y = Math.max(doc.y, blockTop + 44);
+      doc.x = left;
+      doc.moveDown(0.8);
+      this.hr(doc);
+
+      // Line table header
+      const cols = { item: left, room: left + width * 0.46, sku: left + width * 0.64, qty: left + width * 0.78, total: left + width * 0.86 };
+      doc.moveDown(0.5);
+      const headY = doc.y;
+      doc.fontSize(8).fillColor(COLORS.muted);
+      doc.text('ITEM', cols.item, headY);
+      doc.text('ROOM', cols.room, headY);
+      doc.text('SKU', cols.sku, headY);
+      doc.text('QTY', cols.qty, headY);
+      doc.text('TOTAL', cols.total, headY, { width: left + width - cols.total, align: 'right' });
+      doc.moveDown(0.4);
+      this.hr(doc);
+
+      // Lines
+      for (const line of data.lines) {
+        if (doc.y > 720) doc.addPage();
+        const y = doc.y + 8;
+        doc.fontSize(10).fillColor(COLORS.ink).text(line.name, cols.item, y, {
+          width: cols.room - cols.item - 10,
+          ellipsis: true,
+        });
+        const rowY = y;
+        doc.fontSize(9).fillColor(COLORS.muted);
+        doc.text(line.roomName ?? '—', cols.room, rowY, { width: cols.sku - cols.room - 8, ellipsis: true });
+        doc.text(line.sku ?? '—', cols.sku, rowY, { width: cols.qty - cols.sku - 8, ellipsis: true });
+        doc.text(String(line.quantity), cols.qty, rowY);
+        doc
+          .fillColor(COLORS.ink)
+          .text(money(line.lineTotal), cols.total, rowY, {
+            width: left + width - cols.total,
+            align: 'right',
+          });
+        doc.y = rowY + 14;
+        doc.x = left;
+        this.hr(doc);
+      }
+
+      // Totals
+      doc.moveDown(0.8);
+      const totalsX = left + width * 0.55;
+      const totalsW = left + width - totalsX;
+      doc.fontSize(9).fillColor(COLORS.muted).text(`Subtotal:  ${money(data.subtotal)}`, totalsX, doc.y, { width: totalsW, align: 'right' });
+      if (data.discountPct) {
+        doc.text(
+          `Trade discount (${data.discountPct}%):  -${money(data.subtotal - data.total)}`,
+          totalsX,
+          doc.y + 2,
+          { width: totalsW, align: 'right' },
+        );
+      }
+      doc
+        .fontSize(13)
+        .fillColor(COLORS.ink)
+        .text(`Total:  ${money(data.total)}`, totalsX, doc.y + 4, { width: totalsW, align: 'right' });
+
+      if (data.notes) {
+        doc.moveDown(1.2);
+        doc.x = left;
+        doc.fontSize(8).fillColor(COLORS.muted).text('NOTES', left, doc.y);
+        doc.fontSize(9).fillColor(COLORS.ink).text(data.notes, { width });
       }
 
       this.renderFooter(doc);
@@ -248,6 +394,79 @@ export class PdfService {
     doc.y = bottom;
     this.hr(doc);
     doc.moveDown(0.4);
+  }
+
+  /** Sum of price × qty for rows that have a price; groups by currency. */
+  private groupTotals(rows: PdfProductRow[]): Map<string, number> {
+    const totals = new Map<string, number>();
+    for (const row of rows) {
+      if (row.price == null) continue;
+      const cur = row.currency ?? 'USD';
+      totals.set(cur, (totals.get(cur) ?? 0) + Number(row.price) * row.quantity);
+    }
+    return totals;
+  }
+
+  private formatTotals(totals: Map<string, number>): string {
+    return [...totals.entries()]
+      .map(([cur, amount]) =>
+        `${cur} ${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      )
+      .join('  +  ');
+  }
+
+  private renderSubtotal(doc: PDFKit.PDFDocument, group: PdfRoomGroup) {
+    const totals = this.groupTotals(group.rows);
+    if (totals.size === 0) return;
+    if (doc.y > 740) doc.addPage();
+    doc
+      .fontSize(9)
+      .fillColor(COLORS.ink)
+      .text(
+        `${group.roomName} subtotal:   ${this.formatTotals(totals)}`,
+        doc.page.margins.left,
+        doc.y,
+        {
+          width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
+          align: 'right',
+        },
+      );
+    doc.moveDown(0.5);
+  }
+
+  private renderGrandTotal(doc: PDFKit.PDFDocument, data: PdfScheduleData) {
+    const totals = this.groupTotals(data.groups.flatMap((g) => g.rows));
+    if (totals.size === 0) return;
+    if (doc.y > 700) doc.addPage();
+
+    doc.moveDown(0.4);
+    this.hr(doc);
+    doc.moveDown(0.5);
+    const width =
+      doc.page.width - doc.page.margins.left - doc.page.margins.right;
+    doc
+      .fontSize(12)
+      .fillColor(COLORS.ink)
+      .text(`Schedule total:   ${this.formatTotals(totals)}`, doc.page.margins.left, doc.y, {
+        width,
+        align: 'right',
+      });
+
+    if (data.budget != null && totals.size === 1) {
+      const [[cur, total]] = totals.entries();
+      const remaining = Number(data.budget) - total;
+      doc
+        .fontSize(9)
+        .fillColor(remaining < 0 ? COLORS.rejected : COLORS.muted)
+        .text(
+          `Project budget: ${cur} ${Number(data.budget).toLocaleString('en-US', { minimumFractionDigits: 2 })}` +
+            `   ·   ${remaining < 0 ? 'Over by' : 'Remaining'}: ${cur} ${Math.abs(remaining).toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
+          doc.page.margins.left,
+          doc.y + 2,
+          { width, align: 'right' },
+        );
+    }
+    doc.moveDown(0.6);
   }
 
   private statusBadge(doc: PDFKit.PDFDocument, status: string, top: number) {

@@ -16,6 +16,7 @@ import {
   ApprovalStatus,
   ImportStatus,
   NotificationType,
+  OrderStatus,
   UserRole,
 } from '../../common/enums';
 import {
@@ -23,7 +24,30 @@ import {
   UpdateProductDto,
   DecideApprovalDto,
   MoveProductDto,
+  UpdateProcurementDto,
 } from './dto';
+
+export interface ProcurementItem {
+  id: string;
+  name: string;
+  roomName: string;
+  vendor?: string;
+  vendorId?: string | null;
+  price?: number | null;
+  currency: string;
+  imageUrl?: string;
+  orderStatus: OrderStatus;
+  leadTimeDays: number | null; // effective: product override ?? vendor default
+  requiredByDate: string | null;
+  orderByDate: string | null; // requiredBy − leadTime
+  orderedAt: string | null;
+  urgency: 'overdue' | 'urgent' | 'ok'; // for not-yet-ordered items
+}
+
+export interface ProcurementSummary {
+  counts: Record<string, number>;
+  items: ProcurementItem[];
+}
 
 @Injectable()
 export class ProductsService {
@@ -201,6 +225,106 @@ export class ProductsService {
       });
     }
     return this.findOne(id, user);
+  }
+
+  /** Designer updates a product's procurement state (status / lead time / deadline). */
+  async updateProcurement(
+    id: string,
+    dto: UpdateProcurementDto,
+    user: AuthUser,
+  ): Promise<Product> {
+    const product = await this.findOne(id, user);
+    await this.projects.assertDesigner(product.projectId, user);
+
+    if (
+      dto.orderStatus &&
+      dto.orderStatus !== OrderStatus.NONE &&
+      product.approvalStatus !== ApprovalStatus.APPROVED
+    ) {
+      throw new BadRequestException(
+        'Only approved products can enter procurement',
+      );
+    }
+
+    const patch: Partial<Product> = {};
+    if (dto.orderStatus !== undefined) {
+      patch.orderStatus = dto.orderStatus;
+      // Stamp the order date the first time it transitions to ordered
+      if (dto.orderStatus === OrderStatus.ORDERED && !product.orderedAt) {
+        patch.orderedAt = new Date().toISOString().slice(0, 10);
+      }
+    }
+    if (dto.leadTimeDays !== undefined) patch.leadTimeDays = dto.leadTimeDays;
+    if (dto.requiredByDate !== undefined)
+      patch.requiredByDate = dto.requiredByDate;
+
+    await this.repo.update({ id }, patch);
+    return this.findOne(id, user);
+  }
+
+  /**
+   * Procurement board for a project: approved products with their order
+   * lifecycle, effective lead times and computed order-by dates.
+   */
+  async procurementSummary(
+    projectId: string,
+    user: AuthUser,
+  ): Promise<ProcurementSummary> {
+    await this.projects.assertDesigner(projectId, user);
+    const products = await this.repo.find({
+      where: { projectId, approvalStatus: ApprovalStatus.APPROVED },
+      relations: { vendorRef: true, room: true },
+      order: { createdAt: 'ASC' },
+    });
+
+    const today = new Date().toISOString().slice(0, 10);
+    const urgentCutoff = new Date(Date.now() + 7 * 86400000)
+      .toISOString()
+      .slice(0, 10);
+
+    const items: ProcurementItem[] = products.map((p) => {
+      const leadTimeDays =
+        p.leadTimeDays ?? p.vendorRef?.defaultLeadTimeDays ?? null;
+      let orderByDate: string | null = null;
+      if (p.requiredByDate) {
+        const required = new Date(p.requiredByDate);
+        required.setDate(required.getDate() - (leadTimeDays ?? 0));
+        orderByDate = required.toISOString().slice(0, 10);
+      }
+      const awaitingOrder =
+        p.orderStatus === OrderStatus.NONE ||
+        p.orderStatus === OrderStatus.TO_ORDER;
+      const urgency: ProcurementItem['urgency'] =
+        awaitingOrder && orderByDate
+          ? orderByDate < today
+            ? 'overdue'
+            : orderByDate <= urgentCutoff
+              ? 'urgent'
+              : 'ok'
+          : 'ok';
+      return {
+        id: p.id,
+        name: p.name,
+        roomName: p.room?.name ?? '—',
+        vendor: p.vendor,
+        vendorId: p.vendorId,
+        price: p.price != null ? Number(p.price) : null,
+        currency: p.currency,
+        imageUrl: p.images?.[0],
+        orderStatus: p.orderStatus,
+        leadTimeDays,
+        requiredByDate: p.requiredByDate ?? null,
+        orderByDate,
+        orderedAt: p.orderedAt ?? null,
+        urgency,
+      };
+    });
+
+    const counts: Record<string, number> = {};
+    for (const status of Object.values(OrderStatus)) counts[status] = 0;
+    for (const item of items) counts[item.orderStatus]++;
+
+    return { counts, items };
   }
 
   /** Assigned client records an approve/reject decision (client-only route). */

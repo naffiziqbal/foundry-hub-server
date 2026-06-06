@@ -26,6 +26,9 @@ import { CommentsModule } from './modules/comments/comments.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ImportModule } from './modules/import/import.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { VendorsModule } from './modules/vendors/vendors.module';
+import { PurchaseOrdersModule } from './modules/purchase-orders/purchase-orders.module';
+import { InsightsModule } from './modules/insights/insights.module';
 
 // Seed
 import { SeedService } from './database/seed.service';
@@ -104,6 +107,9 @@ import { Schedule } from './modules/schedules/schedule.entity';
     NotificationsModule,
     ImportModule,
     DashboardModule,
+    VendorsModule,
+    PurchaseOrdersModule,
+    InsightsModule,
   ],
   controllers: [AppController],
   providers: [

@@ -35,6 +35,10 @@ export class Project extends BaseEntity {
   @Column({ type: 'text', nullable: true })
   notes?: string;
 
+  // FF&E budget ceiling (project currency); null = untracked
+  @Column({ type: 'numeric', precision: 14, scale: 2, nullable: true })
+  budget?: number | null;
+
   @Column({ nullable: true })
   coverImageUrl?: string;
 

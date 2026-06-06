@@ -18,6 +18,7 @@ import {
   DecideApprovalDto,
   ReorderProductsDto,
   MoveProductDto,
+  UpdateProcurementDto,
 } from './dto';
 
 @ApiTags('products')
@@ -102,6 +103,26 @@ export class ProductsController {
   async remove(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     await this.products.remove(id, user);
     return { ok: true };
+  }
+
+  // ---- procurement ----
+  @Patch('products/:id/procurement')
+  @Roles(UserRole.DESIGNER)
+  updateProcurement(
+    @Param('id') id: string,
+    @Body() dto: UpdateProcurementDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.products.updateProcurement(id, dto, user);
+  }
+
+  @Get('projects/:projectId/procurement')
+  @Roles(UserRole.DESIGNER)
+  procurement(
+    @Param('projectId') projectId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.products.procurementSummary(projectId, user);
   }
 
   // ---- approval workflow ----

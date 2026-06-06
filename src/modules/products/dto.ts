@@ -3,6 +3,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayNotEmpty,
   IsArray,
+  IsDateString,
   IsEnum,
   IsInt,
   IsNumber,
@@ -14,7 +15,7 @@ import {
   MaxLength,
   ValidateNested,
 } from 'class-validator';
-import { ApprovalStatus } from '../../common/enums';
+import { ApprovalStatus, OrderStatus } from '../../common/enums';
 
 export class SpecDto {
   @IsString()
@@ -39,6 +40,10 @@ export class CreateProductDto {
   @IsString()
   @MaxLength(160)
   vendor?: string;
+
+  @IsOptional()
+  @IsUUID()
+  vendorId?: string | null;
 
   @IsOptional()
   @IsString()
@@ -100,6 +105,21 @@ export class DecideApprovalDto {
   @IsString()
   @MaxLength(500)
   note?: string;
+}
+
+export class UpdateProcurementDto {
+  @IsOptional()
+  @IsEnum(OrderStatus)
+  orderStatus?: OrderStatus;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  leadTimeDays?: number | null;
+
+  @IsOptional()
+  @IsDateString()
+  requiredByDate?: string | null;
 }
 
 export class ReorderProductsDto {

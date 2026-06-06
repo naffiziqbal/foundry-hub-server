@@ -76,6 +76,7 @@ export class ExportService {
       scheduleType: schedule.type,
       generatedAt: new Date().toISOString().slice(0, 10),
       groups,
+      budget: project?.budget,
     });
 
     const filename = `${this.slug(project?.name)}-${this.slug(schedule.name)}.pdf`;

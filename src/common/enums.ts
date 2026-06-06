@@ -43,3 +43,20 @@ export enum CommentVisibility {
   INTERNAL = 'internal',
   CLIENT = 'client',
 }
+
+/** Procurement lifecycle. Products enter at TO_ORDER once approved. */
+export enum OrderStatus {
+  NONE = 'none',
+  TO_ORDER = 'to_order',
+  ORDERED = 'ordered',
+  SHIPPED = 'shipped',
+  DELIVERED = 'delivered',
+  INSTALLED = 'installed',
+}
+
+export enum PurchaseOrderStatus {
+  DRAFT = 'draft',
+  SENT = 'sent',
+  CONFIRMED = 'confirmed',
+  CANCELLED = 'cancelled',
+}

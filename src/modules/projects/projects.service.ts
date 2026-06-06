@@ -6,15 +6,30 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Project } from './project.entity';
+import { Product } from '../products/product.entity';
 import { AuthUser } from '../../common/decorators';
-import { UserRole } from '../../common/enums';
+import { ApprovalStatus, UserRole } from '../../common/enums';
 import { CreateProjectDto, UpdateProjectDto } from './dto';
+
+export interface BudgetSummary {
+  budget: number | null;
+  currency: string;
+  /** True when products carry more than one currency — totals are then naive sums */
+  multiCurrency: boolean;
+  selected: number; // all products with a price
+  approved: number;
+  pending: number;
+  rejected: number;
+  remaining: number | null; // budget − selected (null when no budget set)
+}
 
 @Injectable()
 export class ProjectsService {
   constructor(
     @InjectRepository(Project)
     private readonly repo: Repository<Project>,
+    @InjectRepository(Product)
+    private readonly products: Repository<Product>,
   ) {}
 
   async create(dto: CreateProjectDto, user: AuthUser): Promise<Project> {
@@ -105,5 +120,44 @@ export class ProjectsService {
   async remove(projectId: string, user: AuthUser): Promise<void> {
     await this.assertDesigner(projectId, user);
     await this.repo.delete({ id: projectId });
+  }
+
+  /** Budget vs. running selection totals, broken down by approval status. */
+  async budgetSummary(projectId: string, user: AuthUser): Promise<BudgetSummary> {
+    const project = await this.assertAccess(projectId, user);
+    const rows: { status: ApprovalStatus; currency: string; total: string }[] =
+      await this.products
+        .createQueryBuilder('p')
+        .select('p.approvalStatus', 'status')
+        .addSelect('p.currency', 'currency')
+        .addSelect('SUM(p.price)', 'total')
+        .where('p.projectId = :projectId', { projectId })
+        .andWhere('p.price IS NOT NULL')
+        .groupBy('p.approvalStatus')
+        .addGroupBy('p.currency')
+        .getRawMany();
+
+    const currencies = new Set(rows.map((r) => r.currency));
+    const byStatus = (status: ApprovalStatus) =>
+      rows
+        .filter((r) => r.status === status)
+        .reduce((sum, r) => sum + Number(r.total), 0);
+
+    const approved = byStatus(ApprovalStatus.APPROVED);
+    const pending = byStatus(ApprovalStatus.PENDING);
+    const rejected = byStatus(ApprovalStatus.REJECTED);
+    const selected = approved + pending; // rejected items won't be bought
+    const budget = project.budget != null ? Number(project.budget) : null;
+
+    return {
+      budget,
+      currency: rows[0]?.currency ?? 'USD',
+      multiCurrency: currencies.size > 1,
+      selected,
+      approved,
+      pending,
+      rejected,
+      remaining: budget != null ? budget - selected : null,
+    };
   }
 }

@@ -7,10 +7,11 @@ import {
   Index,
 } from 'typeorm';
 import { BaseEntity } from '../../common/base.entity';
-import { ApprovalStatus, ImportStatus } from '../../common/enums';
+import { ApprovalStatus, ImportStatus, OrderStatus } from '../../common/enums';
 import { Room } from '../rooms/room.entity';
 import { Project } from '../projects/project.entity';
 import { Comment } from '../comments/comment.entity';
+import { Vendor } from '../vendors/vendor.entity';
 
 /** A specification line: { label: "Material", value: "Oak veneer" } */
 export interface ProductSpec {
@@ -26,8 +27,17 @@ export class Product extends BaseEntity {
   @Column({ type: 'text', nullable: true })
   description?: string;
 
+  // Free-text vendor (scraped hostname or typed); vendorRef is the linked entity
   @Column({ nullable: true })
   vendor?: string;
+
+  @ManyToOne(() => Vendor, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'vendorId' })
+  vendorRef?: Vendor | null;
+
+  @Index()
+  @Column({ type: 'uuid', nullable: true })
+  vendorId?: string | null;
 
   @Column({ nullable: true })
   manufacturer?: string;
@@ -73,6 +83,21 @@ export class Product extends BaseEntity {
 
   @Column({ type: 'uuid', nullable: true })
   approvalDecidedById?: string | null;
+
+  // ---- Procurement ----
+  @Column({ type: 'enum', enum: OrderStatus, default: OrderStatus.NONE })
+  orderStatus: OrderStatus;
+
+  // Overrides the vendor default when set
+  @Column({ type: 'int', nullable: true })
+  leadTimeDays?: number | null;
+
+  // Install/delivery deadline; with lead time this yields the order-by date
+  @Column({ type: 'date', nullable: true })
+  requiredByDate?: string | null;
+
+  @Column({ type: 'date', nullable: true })
+  orderedAt?: string | null;
 
   // ---- Import workflow ----
   @Column({ type: 'enum', enum: ImportStatus, default: ImportStatus.COMPLETED })

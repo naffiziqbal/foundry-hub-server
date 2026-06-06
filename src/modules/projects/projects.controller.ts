@@ -35,6 +35,11 @@ export class ProjectsController {
     return this.projects.findOne(id, user);
   }
 
+  @Get(':id/budget')
+  budget(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.projects.budgetSummary(id, user);
+  }
+
   @Patch(':id')
   @Roles(UserRole.DESIGNER)
   update(

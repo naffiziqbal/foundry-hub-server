@@ -11,6 +11,7 @@ import { ScraperService } from './scraper.service';
 import { Product } from '../products/product.entity';
 import { ImportStatus, NotificationType } from '../../common/enums';
 import { NotificationsService } from '../notifications/notifications.service';
+import { VendorsService } from '../vendors/vendors.service';
 
 /**
  * BullMQ worker that scrapes a vendor URL and fills in the product record.
@@ -25,6 +26,7 @@ export class ImportProcessor extends WorkerHost {
     private readonly products: Repository<Product>,
     private readonly scraper: ScraperService,
     private readonly notifications: NotificationsService,
+    private readonly vendors: VendorsService,
   ) {
     super();
   }
@@ -45,13 +47,21 @@ export class ImportProcessor extends WorkerHost {
     try {
       const data = await this.scraper.scrape(url);
 
+      // Link to a known vendor when the source matches one (by site, then name)
+      const matchedVendor = await this.vendors.matchForImport(
+        userId,
+        url,
+        data.vendor,
+      );
+
       await this.products.update(
         { id: productId },
         {
           // Only overwrite empty fields so a user who pre-typed a name keeps it
           name: product.name && product.name !== 'Importing…' ? product.name : data.name,
           description: product.description ?? data.description,
-          vendor: data.vendor ?? product.vendor,
+          vendor: matchedVendor?.name ?? data.vendor ?? product.vendor,
+          vendorId: product.vendorId ?? matchedVendor?.id ?? null,
           manufacturer: product.manufacturer ?? data.manufacturer,
           sku: product.sku ?? data.sku,
           price: product.price ?? data.price ?? null,

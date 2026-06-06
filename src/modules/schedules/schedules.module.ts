@@ -24,6 +24,6 @@ import { ProjectsModule } from '../projects/projects.module';
   ],
   providers: [SchedulesService, ExportService, PdfService],
   controllers: [SchedulesController],
-  exports: [SchedulesService],
+  exports: [SchedulesService, PdfService],
 })
 export class SchedulesModule {}

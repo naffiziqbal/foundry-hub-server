@@ -2,10 +2,12 @@ import { PartialType } from '@nestjs/swagger';
 import {
   IsDateString,
   IsEnum,
+  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
   MaxLength,
+  Min,
 } from 'class-validator';
 import { ProjectStatus } from '../../common/enums';
 
@@ -38,6 +40,11 @@ export class CreateProjectDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  budget?: number | null;
 
   @IsOptional()
   @IsString()
