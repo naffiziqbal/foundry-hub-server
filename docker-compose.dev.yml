@@ -16,7 +16,8 @@ services:
       POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-foundry_secret}
       POSTGRES_DB: ${DATABASE_NAME:-foundry_hub}
     ports:
-      - "${DATABASE_PORT:-5434}:5432"
+      # Loopback-only: the API on this host can connect, the internet can't
+      - "127.0.0.1:${DATABASE_PORT:-5434}:5432"
     volumes:
       - foundry_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -31,7 +32,7 @@ services:
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "${REDIS_PORT:-6380}:6379"
+      - "127.0.0.1:${REDIS_PORT:-6380}:6379"
     volumes:
       - foundry_redisdata:/data
     healthcheck:
