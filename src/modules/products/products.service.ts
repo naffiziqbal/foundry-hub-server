@@ -11,6 +11,7 @@ import { Room } from '../rooms/room.entity';
 import { ProjectsService } from '../projects/projects.service';
 import { ImportService } from '../import/import.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { CurrencyService, DisplayPrice } from '../currency/currency.service';
 import { AuthUser } from '../../common/decorators';
 import {
   ApprovalStatus,
@@ -26,6 +27,9 @@ import {
   MoveProductDto,
   UpdateProcurementDto,
 } from './dto';
+
+/** Product enriched with price converted to a requested display currency. */
+export type ProductWithDisplay = Product & Partial<DisplayPrice>;
 
 export interface ProcurementItem {
   id: string;
@@ -46,7 +50,7 @@ export interface ProcurementItem {
 
 export interface ProcurementSummary {
   counts: Record<string, number>;
-  items: ProcurementItem[];
+  items: (ProcurementItem & Partial<DisplayPrice>)[];
 }
 
 @Injectable()
@@ -59,6 +63,7 @@ export class ProductsService {
     private readonly projects: ProjectsService,
     private readonly importService: ImportService,
     private readonly notifications: NotificationsService,
+    private readonly currency: CurrencyService,
   ) {}
 
   private async getRoomOrThrow(roomId: string): Promise<Room> {
@@ -119,24 +124,38 @@ export class ProductsService {
     return saved;
   }
 
-  async listForRoom(roomId: string, user: AuthUser): Promise<Product[]> {
+  async listForRoom(
+    roomId: string,
+    user: AuthUser,
+    displayCurrency?: string,
+  ): Promise<ProductWithDisplay[]> {
     const room = await this.getRoomOrThrow(roomId);
     await this.projects.assertAccess(room.projectId, user);
-    return this.repo.find({
+    const products = await this.repo.find({
       where: { roomId },
       order: { position: 'ASC' },
     });
+    return this.currency.withDisplayPrices(products, displayCurrency);
   }
 
-  async listForProject(projectId: string, user: AuthUser): Promise<Product[]> {
+  async listForProject(
+    projectId: string,
+    user: AuthUser,
+    displayCurrency?: string,
+  ): Promise<ProductWithDisplay[]> {
     await this.projects.assertAccess(projectId, user);
-    return this.repo.find({
+    const products = await this.repo.find({
       where: { projectId },
       order: { position: 'ASC' },
     });
+    return this.currency.withDisplayPrices(products, displayCurrency);
   }
 
-  async findOne(id: string, user: AuthUser): Promise<Product> {
+  async findOne(
+    id: string,
+    user: AuthUser,
+    displayCurrency?: string,
+  ): Promise<ProductWithDisplay> {
     const product = await this.repo.findOne({
       where: { id },
       relations: { comments: true, room: true },
@@ -144,7 +163,12 @@ export class ProductsService {
     });
     if (!product) throw new NotFoundException('Product not found');
     await this.projects.assertAccess(product.projectId, user);
-    return product;
+    if (!displayCurrency) return product;
+    const [withDisplay] = await this.currency.withDisplayPrices(
+      [product],
+      displayCurrency,
+    );
+    return withDisplay;
   }
 
   async update(
@@ -269,6 +293,7 @@ export class ProductsService {
   async procurementSummary(
     projectId: string,
     user: AuthUser,
+    displayCurrency?: string,
   ): Promise<ProcurementSummary> {
     await this.projects.assertDesigner(projectId, user);
     const products = await this.repo.find({
@@ -324,7 +349,10 @@ export class ProductsService {
     for (const status of Object.values(OrderStatus)) counts[status] = 0;
     for (const item of items) counts[item.orderStatus]++;
 
-    return { counts, items };
+    return {
+      counts,
+      items: await this.currency.withDisplayPrices(items, displayCurrency),
+    };
   }
 
   /** Assigned client records an approve/reject decision (client-only route). */

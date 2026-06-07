@@ -14,6 +14,7 @@ import { RolesGuard } from './common/guards/roles.guard';
 import { RedisModule } from './modules/redis/redis.module';
 import { StorageModule } from './modules/storage/storage.module';
 import { MailModule } from './modules/mail/mail.module';
+import { CurrencyModule } from './modules/currency/currency.module';
 
 // Domain modules
 import { AuthModule } from './modules/auth/auth.module';
@@ -95,6 +96,7 @@ import { Schedule } from './modules/schedules/schedule.entity';
     RedisModule,
     StorageModule,
     MailModule,
+    CurrencyModule,
 
     // Domain
     AuthModule,

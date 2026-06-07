@@ -10,11 +10,13 @@ import { Product } from '../products/product.entity';
 import { AuthUser } from '../../common/decorators';
 import { ApprovalStatus, UserRole } from '../../common/enums';
 import { CreateProjectDto, UpdateProjectDto } from './dto';
+import { CurrencyService } from '../currency/currency.service';
 
 export interface BudgetSummary {
   budget: number | null;
+  /** Currency every total below is expressed in. */
   currency: string;
-  /** True when products carry more than one currency — totals are then naive sums */
+  /** True when products carry more than one currency (totals are FX-converted). */
   multiCurrency: boolean;
   selected: number; // all products with a price
   approved: number;
@@ -30,6 +32,7 @@ export class ProjectsService {
     private readonly repo: Repository<Project>,
     @InjectRepository(Product)
     private readonly products: Repository<Product>,
+    private readonly currency: CurrencyService,
   ) {}
 
   async create(dto: CreateProjectDto, user: AuthUser): Promise<Project> {
@@ -122,8 +125,16 @@ export class ProjectsService {
     await this.repo.delete({ id: projectId });
   }
 
-  /** Budget vs. running selection totals, broken down by approval status. */
-  async budgetSummary(projectId: string, user: AuthUser): Promise<BudgetSummary> {
+  /**
+   * Budget vs. running selection totals, broken down by approval status.
+   * Mixed-currency products are FX-converted into one currency before summing
+   * (`displayCurrency` when given, else the project's dominant currency).
+   */
+  async budgetSummary(
+    projectId: string,
+    user: AuthUser,
+    displayCurrency?: string,
+  ): Promise<BudgetSummary> {
     const project = await this.assertAccess(projectId, user);
     const rows: { status: ApprovalStatus; currency: string; total: string }[] =
       await this.products
@@ -138,20 +149,43 @@ export class ProjectsService {
         .getRawMany();
 
     const currencies = new Set(rows.map((r) => r.currency));
+    // The project's implicit working currency (its budget is denominated in it)
+    const projectCurrency = (rows[0]?.currency ?? 'USD').toUpperCase();
+    const target = (displayCurrency ?? projectCurrency).toUpperCase();
+
+    // Convert each (status, currency) group into the target before summing —
+    // a naive sum of USD + BDT rows would be meaningless.
+    const converted = await Promise.all(
+      rows.map(async (r) => {
+        const total = Number(r.total);
+        if (r.currency.toUpperCase() === target) return { ...r, total };
+        const { amount } = await this.currency.convert(
+          total,
+          r.currency,
+          target,
+        );
+        return { ...r, total: amount };
+      }),
+    );
+
     const byStatus = (status: ApprovalStatus) =>
-      rows
+      converted
         .filter((r) => r.status === status)
-        .reduce((sum, r) => sum + Number(r.total), 0);
+        .reduce((sum, r) => sum + r.total, 0);
 
     const approved = byStatus(ApprovalStatus.APPROVED);
     const pending = byStatus(ApprovalStatus.PENDING);
     const rejected = byStatus(ApprovalStatus.REJECTED);
     const selected = approved + pending; // rejected items won't be bought
-    const budget = project.budget != null ? Number(project.budget) : null;
+    let budget = project.budget != null ? Number(project.budget) : null;
+    if (budget != null && projectCurrency !== target) {
+      budget = (await this.currency.convert(budget, projectCurrency, target))
+        .amount;
+    }
 
     return {
       budget,
-      currency: rows[0]?.currency ?? 'USD',
+      currency: target,
       multiCurrency: currencies.size > 1,
       selected,
       approved,

@@ -6,8 +6,9 @@ import {
   Param,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { ProjectsService } from './projects.service';
 import { CurrentUser, AuthUser, Roles } from '../../common/decorators';
 import { UserRole } from '../../common/enums';
@@ -36,8 +37,13 @@ export class ProjectsController {
   }
 
   @Get(':id/budget')
-  budget(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.projects.budgetSummary(id, user);
+  @ApiQuery({ name: 'currency', required: false })
+  budget(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+    @Query('currency') currency?: string,
+  ) {
+    return this.projects.budgetSummary(id, user, currency);
   }
 
   @Patch(':id')

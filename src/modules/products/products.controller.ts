@@ -6,8 +6,9 @@ import {
   Param,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { ProductsService } from './products.service';
 import { CurrentUser, AuthUser, Roles } from '../../common/decorators';
 import { UserRole } from '../../common/enums';
@@ -28,17 +29,26 @@ export class ProductsController {
   constructor(private readonly products: ProductsService) {}
 
   // ---- listing ----
+  // `?currency=EUR` adds displayPrice/displayCurrency/fxRate converted from
+  // each product's stored (scraped) currency; the original price is untouched.
   @Get('rooms/:roomId/products')
-  listForRoom(@Param('roomId') roomId: string, @CurrentUser() user: AuthUser) {
-    return this.products.listForRoom(roomId, user);
+  @ApiQuery({ name: 'currency', required: false })
+  listForRoom(
+    @Param('roomId') roomId: string,
+    @CurrentUser() user: AuthUser,
+    @Query('currency') currency?: string,
+  ) {
+    return this.products.listForRoom(roomId, user, currency);
   }
 
   @Get('projects/:projectId/products')
+  @ApiQuery({ name: 'currency', required: false })
   listForProject(
     @Param('projectId') projectId: string,
     @CurrentUser() user: AuthUser,
+    @Query('currency') currency?: string,
   ) {
-    return this.products.listForProject(projectId, user);
+    return this.products.listForProject(projectId, user, currency);
   }
 
   // ---- creation ----
@@ -74,8 +84,13 @@ export class ProductsController {
 
   // ---- single product ----
   @Get('products/:id')
-  findOne(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.products.findOne(id, user);
+  @ApiQuery({ name: 'currency', required: false })
+  findOne(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+    @Query('currency') currency?: string,
+  ) {
+    return this.products.findOne(id, user, currency);
   }
 
   @Patch('products/:id')
@@ -118,11 +133,13 @@ export class ProductsController {
 
   @Get('projects/:projectId/procurement')
   @Roles(UserRole.DESIGNER)
+  @ApiQuery({ name: 'currency', required: false })
   procurement(
     @Param('projectId') projectId: string,
     @CurrentUser() user: AuthUser,
+    @Query('currency') currency?: string,
   ) {
-    return this.products.procurementSummary(projectId, user);
+    return this.products.procurementSummary(projectId, user, currency);
   }
 
   // ---- approval workflow ----
