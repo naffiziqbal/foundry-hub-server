@@ -47,8 +47,9 @@ export class ImportProcessor extends WorkerHost {
     try {
       const data = await this.scraper.scrape(url);
 
-      // Link to a known vendor when the source matches one (by site, then name)
-      const matchedVendor = await this.vendors.matchForImport(
+      // Link to a known vendor (matched by site, then name) — or auto-create
+      // one from the source website so it lands in the vendor database
+      const matchedVendor = await this.vendors.findOrCreateForImport(
         userId,
         url,
         data.vendor,

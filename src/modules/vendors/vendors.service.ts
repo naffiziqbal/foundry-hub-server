@@ -69,6 +69,39 @@ export class VendorsService {
   }
 
   /**
+   * Resolve the vendor for an imported product: match an existing one by
+   * website hostname or name, otherwise auto-create it from the source site
+   * so every scraped store lands in the designer's vendor database.
+   */
+  async findOrCreateForImport(
+    designerId: string,
+    sourceUrl?: string,
+    vendorName?: string,
+  ): Promise<Vendor | null> {
+    const matched = await this.matchForImport(designerId, sourceUrl, vendorName);
+    if (matched) return matched;
+
+    const host = this.hostname(sourceUrl);
+    const name = vendorName?.trim() || host;
+    if (!name) return null; // nothing scrapeable to name the vendor after
+
+    // Re-check by exact name right before insert to narrow the window where
+    // two concurrent imports from the same site would both create the vendor.
+    const existing = await this.repo.findOne({
+      where: { designerId, name },
+    });
+    if (existing) return existing;
+
+    return this.repo.save(
+      this.repo.create({
+        name,
+        website: host ? `https://${host}` : undefined,
+        designerId,
+      }),
+    );
+  }
+
+  /**
    * Best-effort match for imports: by website hostname, then by name.
    * Returns null when nothing matches — never creates vendors implicitly.
    */
